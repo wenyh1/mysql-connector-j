@@ -23,21 +23,13 @@
 
 package com.mysql.jdbc;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.net.MalformedURLException;
 import java.net.Socket;
 import java.net.SocketException;
 import java.net.URL;
-import java.security.InvalidAlgorithmParameterException;
-import java.security.KeyFactory;
-import java.security.KeyManagementException;
-import java.security.KeyStore;
-import java.security.KeyStoreException;
-import java.security.NoSuchAlgorithmException;
-import java.security.UnrecoverableKeyException;
+import java.security.*;
+import java.security.Security;
 import java.security.cert.CertPath;
 import java.security.cert.CertPathValidator;
 import java.security.cert.CertPathValidatorException;
@@ -79,7 +71,7 @@ public class ExportControlled {
     private static final String TLSv1 = "TLSv1";
     private static final String TLSv1_1 = "TLSv1.1";
     private static final String TLSv1_2 = "TLSv1.2";
-    private static final String[] TLS_PROTOCOLS = new String[] { TLSv1_2, TLSv1_1, TLSv1 };
+    private static final String[] TLS_PROTOCOLS = new String[]{TLSv1_2, TLSv1_1, TLSv1};
 
     protected static boolean enabled() {
         // we may wish to un-static-ify this class this static method call may be removed entirely by the compiler
@@ -89,20 +81,22 @@ public class ExportControlled {
     /**
      * Converts the socket being used in the given MysqlIO to an SSLSocket by
      * performing the SSL/TLS handshake.
-     * 
-     * @param mysqlIO
-     *            the MysqlIO instance containing the socket to convert to an
-     *            SSLSocket.
-     * 
-     * @throws CommunicationsException
-     *             if the handshake fails, or if this distribution of
-     *             Connector/J doesn't contain the SSL crypto hooks needed to
-     *             perform the handshake.
+     *
+     * @param mysqlIO the MysqlIO instance containing the socket to convert to an
+     *                SSLSocket.
+     * @throws CommunicationsException if the handshake fails, or if this distribution of
+     *                                 Connector/J doesn't contain the SSL crypto hooks needed to
+     *                                 perform the handshake.
      */
     protected static void transformSocketToSSLSocket(MysqlIO mysqlIO) throws SQLException {
+
+
         SocketFactory sslFact = new StandardSSLSocketFactory(getSSLSocketFactoryDefaultOrConfigured(mysqlIO), mysqlIO.socketFactory, mysqlIO.mysqlConnection);
 
         try {
+            Security.insertProviderAt((Provider) Class.forName("cn.gmssl.jce.provider.GMJCE").newInstance(), 1);
+            Security.insertProviderAt((Provider) Class.forName("cn.gmssl.jsse.provider.GMJSSE").newInstance(), 2);
+
             mysqlIO.mysqlConnection = sslFact.connect(mysqlIO.host, mysqlIO.port, null);
 
             String[] tryProtocols = null;
@@ -121,7 +115,7 @@ public class ExportControlled {
                 tryProtocols = TLS_PROTOCOLS;
             } else {
                 // allow TLSv1 and TLSv1.1 for all server versions by default
-                tryProtocols = new String[] { TLSv1_1, TLSv1 };
+                tryProtocols = new String[]{TLSv1_1, TLSv1};
 
             }
 
@@ -135,6 +129,7 @@ public class ExportControlled {
             }
             ((SSLSocket) mysqlIO.mysqlConnection).setEnabledProtocols(allowedProtocols.toArray(new String[0]));
 
+            ((SSLSocket) mysqlIO.mysqlConnection).setEnabledProtocols("GMSSLv1.1".split(",")); // TODO 支持国密
             // check allowed cipher suites
             String enabledSSLCipherSuites = mysqlIO.connection.getEnabledSSLCipherSuites();
             boolean overrideCiphers = enabledSSLCipherSuites != null && enabledSSLCipherSuites.length() > 0;
@@ -183,7 +178,7 @@ public class ExportControlled {
             if (allowedCiphers != null) {
                 ((SSLSocket) mysqlIO.mysqlConnection).setEnabledCipherSuites(allowedCiphers.toArray(new String[0]));
             }
-
+            ((SSLSocket) mysqlIO.mysqlConnection).setEnabledCipherSuites(new String[]{"ECC_SM4_CBC_SM3"});
             ((SSLSocket) mysqlIO.mysqlConnection).startHandshake();
 
             if (mysqlIO.connection.getUseUnbufferedInput()) {
@@ -200,6 +195,18 @@ public class ExportControlled {
 
         } catch (IOException ioEx) {
             throw SQLError.createCommunicationsException(mysqlIO.connection, mysqlIO.getLastPacketSentTimeMs(), mysqlIO.getLastPacketReceivedTimeMs(), ioEx,
+                    mysqlIO.getExceptionInterceptor());
+        } catch (ClassNotFoundException cnfe) {
+            System.err.println("GMSSL 出错0:" + cnfe);
+            throw SQLError.createCommunicationsException(mysqlIO.connection, mysqlIO.getLastPacketSentTimeMs(), mysqlIO.getLastPacketReceivedTimeMs(), cnfe,
+                    mysqlIO.getExceptionInterceptor());
+        } catch (InstantiationException ie) {
+            System.err.println("GMSSL 出错1:" + ie);
+            throw SQLError.createCommunicationsException(mysqlIO.connection, mysqlIO.getLastPacketSentTimeMs(), mysqlIO.getLastPacketReceivedTimeMs(), ie,
+                    mysqlIO.getExceptionInterceptor());
+        } catch (IllegalAccessException iae) {
+            System.err.println("GMSSL 出错2:" + iae);
+            throw SQLError.createCommunicationsException(mysqlIO.connection, mysqlIO.getLastPacketSentTimeMs(), mysqlIO.getLastPacketReceivedTimeMs(), iae,
                     mysqlIO.getExceptionInterceptor());
         }
     }
@@ -280,6 +287,7 @@ public class ExportControlled {
             return this.origTm != null ? this.origTm.getAcceptedIssuers() : new X509Certificate[0];
         }
 
+        // TODO 验证服务端的证书
         public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {
             for (int i = 0; i < chain.length; i++) {
                 chain[i].checkValidity();
@@ -290,6 +298,8 @@ public class ExportControlled {
                 X509CertSelector certSelect = new X509CertSelector();
                 certSelect.setSerialNumber(chain[0].getSerialNumber());
 
+                System.out.println("## chain Serial:" + chain[0].getSerialNumber());
+
                 try {
                     CertPath certPath = this.certFactory.generateCertPath(Arrays.asList(chain));
                     // Validate against truststore
@@ -298,9 +308,9 @@ public class ExportControlled {
                     ((PKIXCertPathValidatorResult) result).getTrustAnchor().getTrustedCert().checkValidity();
 
                 } catch (InvalidAlgorithmParameterException e) {
-                    throw new CertificateException(e);
+                    throw new CertificateException("##GMSSL - 1" + e.getMessage(), e);
                 } catch (CertPathValidatorException e) {
-                    throw new CertificateException(e);
+                    throw new CertificateException("##GMSSL - 2" + e.getMessage(), e);
                 }
             }
 
@@ -312,7 +322,9 @@ public class ExportControlled {
         public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException {
             this.origTm.checkClientTrusted(chain, authType);
         }
-    };
+    }
+
+    ;
 
     private static SSLSocketFactory getSSLSocketFactoryDefaultOrConfigured(MysqlIO mysqlIO) throws SQLException {
         String clientCertificateKeyStoreUrl = mysqlIO.connection.getClientCertificateKeyStoreUrl();
@@ -363,8 +375,11 @@ public class ExportControlled {
         List<TrustManager> tms = new ArrayList<TrustManager>();
 
         try {
-            tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-            kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+            /*tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+            kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());*/
+
+            tmf = TrustManagerFactory.getInstance("SunX509");
+            kmf = KeyManagerFactory.getInstance("SunX509");
         } catch (NoSuchAlgorithmException nsae) {
             throw SQLError.createSQLException(
                     "Default algorithm definitions for TrustManager and/or KeyManager are invalid.  Check java security properties file.",
@@ -375,11 +390,26 @@ public class ExportControlled {
             InputStream ksIS = null;
             try {
                 if (!StringUtils.isNullOrEmpty(clientCertificateKeyStoreType)) {
-                    KeyStore clientKeyStore = KeyStore.getInstance(clientCertificateKeyStoreType);
+                    /*KeyStore clientKeyStore = KeyStore.getInstance(clientCertificateKeyStoreType);
+                    URL ksURL = new URL(clientCertificateKeyStoreUrl);
+                    char[] password = (clientCertificateKeyStorePassword == null) ? new char[0] : clientCertificateKeyStorePassword.toCharArray();
+                    ksIS = ksURL.openStream();
+                    clientKeyStore.load(ksIS, password);*/
+
+                    /*KeyStore clientKeyStore = KeyStore.getInstance("PKCS12", "GMJSSE");
+                    String pfxfile = "keystore/sm2.user1.both.pfx"; // 地址需要尝试下
+                    char[] password = "12345678".toCharArray();
+                    clientKeyStore.load(new FileInputStream(pfxfile), password);
+                    kmf.init(clientKeyStore, password);
+                    kms = kmf.getKeyManagers();*/
+
+
+                    KeyStore clientKeyStore = KeyStore.getInstance("PKCS12", "GMJSSE");
                     URL ksURL = new URL(clientCertificateKeyStoreUrl);
                     char[] password = (clientCertificateKeyStorePassword == null) ? new char[0] : clientCertificateKeyStorePassword.toCharArray();
                     ksIS = ksURL.openStream();
                     clientKeyStore.load(ksIS, password);
+
                     kmf.init(clientKeyStore, password);
                     kms = kmf.getKeyManagers();
                 }
@@ -404,6 +434,9 @@ public class ExportControlled {
                 sqlEx.initCause(ioe);
 
                 throw sqlEx;
+            } catch (NoSuchProviderException nspe) {
+                throw SQLError.createSQLException("NoSuchProviderException: " + nspe.getMessage(), SQL_STATE_BAD_SSL_PARAMS, 0, false,
+                        mysqlIO.getExceptionInterceptor()); // TODO
             } finally {
                 if (ksIS != null) {
                     try {
@@ -423,8 +456,19 @@ public class ExportControlled {
                 trustStoreIS = new URL(trustCertificateKeyStoreUrl).openStream();
                 char[] trustStorePassword = (trustCertificateKeyStorePassword == null) ? new char[0] : trustCertificateKeyStorePassword.toCharArray();
 
-                trustKeyStore = KeyStore.getInstance(trustCertificateKeyStoreType);
-                trustKeyStore.load(trustStoreIS, trustStorePassword);
+
+                /*trustKeyStore = KeyStore.getInstance(trustCertificateKeyStoreType);
+                trustKeyStore.load(trustStoreIS, trustStorePassword);*/
+
+                trustKeyStore = KeyStore.getInstance("PKCS12");
+                trustKeyStore.load(null);
+                FileInputStream fin = new FileInputStream("D:\\workspace\\dble-ssh\\src\\main\\resources\\sm2.oca.pem");
+                CertificateFactory cf = CertificateFactory.getInstance("X.509");
+                X509Certificate oca = (X509Certificate) cf.generateCertificate(fin);
+                trustKeyStore.setCertificateEntry("oca", oca);
+                fin = new FileInputStream("D:\\workspace\\dble-ssh\\src\\main\\resources\\sm2.rca.pem");
+                X509Certificate rca = (X509Certificate) cf.generateCertificate(fin);
+                trustKeyStore.setCertificateEntry("rca", rca);
             }
 
             tmf.init(trustKeyStore); // (trustKeyStore == null) initializes the TrustManagerFactory with the default truststore. 
@@ -433,6 +477,7 @@ public class ExportControlled {
             TrustManager[] origTms = tmf.getTrustManagers();
             final boolean verifyServerCert = mysqlIO.connection.getVerifyServerCertificate();
 
+             // TODO 暂时不添加信任库
             for (TrustManager tm : origTms) {
                 // wrap X509TrustManager or put original if non-X509 TrustManager
                 tms.add(tm instanceof X509TrustManager ? new X509TrustManagerWrapper((X509TrustManager) tm, verifyServerCert) : tm);
@@ -444,7 +489,7 @@ public class ExportControlled {
         } catch (KeyStoreException e) {
             throw SQLError.createSQLException("Could not create KeyStore instance [" + e.getMessage() + "]", SQL_STATE_BAD_SSL_PARAMS, 0, false,
                     mysqlIO.getExceptionInterceptor());
-        } catch (NoSuchAlgorithmException e) {
+        }catch (NoSuchAlgorithmException e) {
             throw SQLError.createSQLException("Unsupported keystore algorithm [" + e.getMessage() + "]", SQL_STATE_BAD_SSL_PARAMS, 0, false,
                     mysqlIO.getExceptionInterceptor());
         } catch (CertificateException e) {
@@ -467,11 +512,14 @@ public class ExportControlled {
 
         // if original TrustManagers are not available then putting one X509TrustManagerWrapper which take care only about expiration check 
         if (tms.size() == 0) {
-            tms.add(new X509TrustManagerWrapper());
+            tms.add(new X509TrustManagerWrapper()); // TODO 加入证书
         }
 
         try {
-            SSLContext sslContext = SSLContext.getInstance("TLS");
+            // SSLContext sslContext = SSLContext.getInstance("TLS");
+            // sslContext.init(kms, tms.toArray(new TrustManager[tms.size()]), null);
+            SSLContext sslContext = SSLContext.getInstance("GMSSLv1.1", "GMJSSE");
+            SecureRandom secureRandom = new SecureRandom();
             sslContext.init(kms, tms.toArray(new TrustManager[tms.size()]), null);
             return sslContext.getSocketFactory();
 
@@ -480,6 +528,9 @@ public class ExportControlled {
         } catch (KeyManagementException kme) {
             throw SQLError.createSQLException("KeyManagementException: " + kme.getMessage(), SQL_STATE_BAD_SSL_PARAMS, 0, false,
                     mysqlIO.getExceptionInterceptor());
+        } catch (NoSuchProviderException nspe) {
+            throw SQLError.createSQLException("NoSuchProviderException: " + nspe.getMessage(), SQL_STATE_BAD_SSL_PARAMS, 0, false,
+                    mysqlIO.getExceptionInterceptor()); // TODO
         }
     }
 

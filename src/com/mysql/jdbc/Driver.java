@@ -23,6 +23,8 @@
 
 package com.mysql.jdbc;
 
+import java.security.Provider;
+import java.security.Security;
 import java.sql.SQLException;
 
 /**
@@ -45,10 +47,17 @@ public class Driver extends NonRegisteringDriver implements java.sql.Driver {
     // Register ourselves with the DriverManager
     //
     static {
+        System.out.println("## JDBC Driver  测试 GMSSL代码");
         try {
+            java.security.Security.insertProviderAt((Provider) Class.forName("cn.gmssl.jce.provider.GMJCE").newInstance(), 1);
+            Security.insertProviderAt((Provider) Class.forName("cn.gmssl.jsse.provider.GMJSSE").newInstance(), 2);
             java.sql.DriverManager.registerDriver(new Driver());
-        } catch (SQLException E) {
+        } catch (SQLException | ClassNotFoundException E) {
             throw new RuntimeException("Can't register driver!");
+        } catch (InstantiationException e) {
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
         }
     }
 
