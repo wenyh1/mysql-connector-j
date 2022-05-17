@@ -49,7 +49,7 @@ public class Driver extends NonRegisteringDriver implements java.sql.Driver {
     static {
         System.out.println("## JDBC Driver  测试 GMSSL代码");
         try {
-            java.security.Security.insertProviderAt((Provider) Class.forName("cn.gmssl.jce.provider.GMJCE").newInstance(), 1);
+            Security.insertProviderAt((Provider) Class.forName("cn.gmssl.jce.provider.GMJCE").newInstance(), 1);
             Security.insertProviderAt((Provider) Class.forName("cn.gmssl.jsse.provider.GMJSSE").newInstance(), 2);
             java.sql.DriverManager.registerDriver(new Driver());
         } catch (SQLException | ClassNotFoundException E) {

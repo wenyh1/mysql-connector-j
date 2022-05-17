@@ -94,9 +94,6 @@ public class ExportControlled {
         SocketFactory sslFact = new StandardSSLSocketFactory(getSSLSocketFactoryDefaultOrConfigured(mysqlIO), mysqlIO.socketFactory, mysqlIO.mysqlConnection);
 
         try {
-            Security.insertProviderAt((Provider) Class.forName("cn.gmssl.jce.provider.GMJCE").newInstance(), 1);
-            Security.insertProviderAt((Provider) Class.forName("cn.gmssl.jsse.provider.GMJSSE").newInstance(), 2);
-
             mysqlIO.mysqlConnection = sslFact.connect(mysqlIO.host, mysqlIO.port, null);
 
             String[] tryProtocols = null;
@@ -196,7 +193,8 @@ public class ExportControlled {
         } catch (IOException ioEx) {
             throw SQLError.createCommunicationsException(mysqlIO.connection, mysqlIO.getLastPacketSentTimeMs(), mysqlIO.getLastPacketReceivedTimeMs(), ioEx,
                     mysqlIO.getExceptionInterceptor());
-        } catch (ClassNotFoundException cnfe) {
+        }
+        /*catch (ClassNotFoundException cnfe) {
             System.err.println("GMSSL 出错0:" + cnfe);
             throw SQLError.createCommunicationsException(mysqlIO.connection, mysqlIO.getLastPacketSentTimeMs(), mysqlIO.getLastPacketReceivedTimeMs(), cnfe,
                     mysqlIO.getExceptionInterceptor());
@@ -208,7 +206,7 @@ public class ExportControlled {
             System.err.println("GMSSL 出错2:" + iae);
             throw SQLError.createCommunicationsException(mysqlIO.connection, mysqlIO.getLastPacketSentTimeMs(), mysqlIO.getLastPacketReceivedTimeMs(), iae,
                     mysqlIO.getExceptionInterceptor());
-        }
+        }*/
     }
 
     /**
@@ -386,7 +384,8 @@ public class ExportControlled {
                     SQL_STATE_BAD_SSL_PARAMS, 0, false, mysqlIO.getExceptionInterceptor());
         }
 
-        if (!StringUtils.isNullOrEmpty(clientCertificateKeyStoreUrl)) {
+        //if (!StringUtils.isNullOrEmpty(clientCertificateKeyStoreUrl)) {
+        if (true) {
             InputStream ksIS = null;
             try {
                 if (!StringUtils.isNullOrEmpty(clientCertificateKeyStoreType)) {
@@ -396,22 +395,23 @@ public class ExportControlled {
                     ksIS = ksURL.openStream();
                     clientKeyStore.load(ksIS, password);*/
 
-                    /*KeyStore clientKeyStore = KeyStore.getInstance("PKCS12", "GMJSSE");
-                    String pfxfile = "keystore/sm2.user1.both.pfx"; // 地址需要尝试下
+                    KeyStore clientKeyStore = KeyStore.getInstance("PKCS12", "GMJSSE");
+                    String pfxfile = "D:\\workspace\\dble-ssh\\src\\main\\resources\\client-key\\sm2.action.both.pfx"; // 地址需要尝试下
+                    System.out.println("## 准备证书 pfx：" + pfxfile);
                     char[] password = "12345678".toCharArray();
                     clientKeyStore.load(new FileInputStream(pfxfile), password);
                     kmf.init(clientKeyStore, password);
-                    kms = kmf.getKeyManagers();*/
+                    kms = kmf.getKeyManagers();
 
 
-                    KeyStore clientKeyStore = KeyStore.getInstance("PKCS12", "GMJSSE");
+                    /*KeyStore clientKeyStore = KeyStore.getInstance("PKCS12", "GMJSSE");
                     URL ksURL = new URL(clientCertificateKeyStoreUrl);
                     char[] password = (clientCertificateKeyStorePassword == null) ? new char[0] : clientCertificateKeyStorePassword.toCharArray();
                     ksIS = ksURL.openStream();
                     clientKeyStore.load(ksIS, password);
 
                     kmf.init(clientKeyStore, password);
-                    kms = kmf.getKeyManagers();
+                    kms = kmf.getKeyManagers();*/
                 }
             } catch (UnrecoverableKeyException uke) {
                 throw SQLError.createSQLException("Could not recover keys from client keystore.  Check password?", SQL_STATE_BAD_SSL_PARAMS, 0, false,
@@ -452,21 +452,24 @@ public class ExportControlled {
         try {
             KeyStore trustKeyStore = null;
 
-            if (!StringUtils.isNullOrEmpty(trustCertificateKeyStoreUrl) && !StringUtils.isNullOrEmpty(trustCertificateKeyStoreType)) {
-                trustStoreIS = new URL(trustCertificateKeyStoreUrl).openStream();
+            //if (!StringUtils.isNullOrEmpty(trustCertificateKeyStoreUrl) && !StringUtils.isNullOrEmpty(trustCertificateKeyStoreType)) {
+            if (true) {
+                /*trustStoreIS = new URL(trustCertificateKeyStoreUrl).openStream();
                 char[] trustStorePassword = (trustCertificateKeyStorePassword == null) ? new char[0] : trustCertificateKeyStorePassword.toCharArray();
-
-
-                /*trustKeyStore = KeyStore.getInstance(trustCertificateKeyStoreType);
+                trustKeyStore = KeyStore.getInstance(trustCertificateKeyStoreType);
                 trustKeyStore.load(trustStoreIS, trustStorePassword);*/
 
                 trustKeyStore = KeyStore.getInstance("PKCS12");
                 trustKeyStore.load(null);
-                FileInputStream fin = new FileInputStream("D:\\workspace\\dble-ssh\\src\\main\\resources\\sm2.oca.pem");
+                String ocaFile = "D:\\workspace\\dble-ssh\\src\\main\\resources\\client-key\\sm2.oca.pem";
+                System.out.println("## 准备证书 oca：" + ocaFile);
+                FileInputStream fin = new FileInputStream(ocaFile);
                 CertificateFactory cf = CertificateFactory.getInstance("X.509");
                 X509Certificate oca = (X509Certificate) cf.generateCertificate(fin);
                 trustKeyStore.setCertificateEntry("oca", oca);
-                fin = new FileInputStream("D:\\workspace\\dble-ssh\\src\\main\\resources\\sm2.rca.pem");
+                String rcaFile = "D:\\workspace\\dble-ssh\\src\\main\\resources\\client-key\\sm2.oca.pem";
+                System.out.println("## 准备证书 rca：" + ocaFile);
+                fin = new FileInputStream(rcaFile);
                 X509Certificate rca = (X509Certificate) cf.generateCertificate(fin);
                 trustKeyStore.setCertificateEntry("rca", rca);
             }
@@ -477,7 +480,7 @@ public class ExportControlled {
             TrustManager[] origTms = tmf.getTrustManagers();
             final boolean verifyServerCert = mysqlIO.connection.getVerifyServerCertificate();
 
-             // TODO 暂时不添加信任库
+            // TODO 暂时不添加信任库
             for (TrustManager tm : origTms) {
                 // wrap X509TrustManager or put original if non-X509 TrustManager
                 tms.add(tm instanceof X509TrustManager ? new X509TrustManagerWrapper((X509TrustManager) tm, verifyServerCert) : tm);
@@ -489,7 +492,7 @@ public class ExportControlled {
         } catch (KeyStoreException e) {
             throw SQLError.createSQLException("Could not create KeyStore instance [" + e.getMessage() + "]", SQL_STATE_BAD_SSL_PARAMS, 0, false,
                     mysqlIO.getExceptionInterceptor());
-        }catch (NoSuchAlgorithmException e) {
+        } catch (NoSuchAlgorithmException e) {
             throw SQLError.createSQLException("Unsupported keystore algorithm [" + e.getMessage() + "]", SQL_STATE_BAD_SSL_PARAMS, 0, false,
                     mysqlIO.getExceptionInterceptor());
         } catch (CertificateException e) {
