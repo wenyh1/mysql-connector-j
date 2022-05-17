@@ -175,7 +175,8 @@ public class ExportControlled {
             if (allowedCiphers != null) {
                 ((SSLSocket) mysqlIO.mysqlConnection).setEnabledCipherSuites(allowedCiphers.toArray(new String[0]));
             }
-            ((SSLSocket) mysqlIO.mysqlConnection).setEnabledCipherSuites(new String[]{"ECC_SM4_CBC_SM3"});
+            // ((SSLSocket) mysqlIO.mysqlConnection).setEnabledCipherSuites(new String[]{"ECC_SM4_CBC_SM3"});
+            ((SSLSocket) mysqlIO.mysqlConnection).setEnabledCipherSuites(new String[]{"ECDHE_SM4_CBC_SM3"});
             ((SSLSocket) mysqlIO.mysqlConnection).startHandshake();
 
             if (mysqlIO.connection.getUseUnbufferedInput()) {
@@ -468,7 +469,7 @@ public class ExportControlled {
                 X509Certificate oca = (X509Certificate) cf.generateCertificate(fin);
                 trustKeyStore.setCertificateEntry("oca", oca);
                 String rcaFile = "D:\\workspace\\dble-ssh\\src\\main\\resources\\client-key\\sm2.oca.pem";
-                System.out.println("## 准备证书 rca：" + ocaFile);
+                System.out.println("## 准备证书 rca：" + rcaFile);
                 fin = new FileInputStream(rcaFile);
                 X509Certificate rca = (X509Certificate) cf.generateCertificate(fin);
                 trustKeyStore.setCertificateEntry("rca", rca);
