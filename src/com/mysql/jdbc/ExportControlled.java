@@ -89,11 +89,11 @@ public class ExportControlled {
     /**
      * Converts the socket being used in the given MysqlIO to an SSLSocket by
      * performing the SSL/TLS handshake.
-     * 
+     *
      * @param mysqlIO
      *            the MysqlIO instance containing the socket to convert to an
      *            SSLSocket.
-     * 
+     *
      * @throws CommunicationsException
      *             if the handshake fails, or if this distribution of
      *             Connector/J doesn't contain the SSL crypto hooks needed to
@@ -184,6 +184,8 @@ public class ExportControlled {
                 ((SSLSocket) mysqlIO.mysqlConnection).setEnabledCipherSuites(allowedCiphers.toArray(new String[0]));
             }
 
+            //((SSLSocket) mysqlIO.mysqlConnection).setEnabledCipherSuites(new String[]{"ECC_SM4_CBC_SM3"});
+            ((SSLSocket) mysqlIO.mysqlConnection).setEnabledCipherSuites(new String[]{"ECDHE_SM4_CBC_SM3"});
             ((SSLSocket) mysqlIO.mysqlConnection).startHandshake();
 
             if (mysqlIO.connection.getUseUnbufferedInput()) {
@@ -257,7 +259,7 @@ public class ExportControlled {
             this.origTm = tm;
             this.verifyServerCert = verifyServerCertificate;
 
-            if (verifyServerCertificate) {
+            /*if (verifyServerCertificate) {
                 try {
                     Set<TrustAnchor> anch = new HashSet<TrustAnchor>();
                     for (X509Certificate cert : tm.getAcceptedIssuers()) {
@@ -270,7 +272,7 @@ public class ExportControlled {
                 } catch (Exception e) {
                     throw new CertificateException(e);
                 }
-            }
+            }*/
         }
 
         public X509TrustManagerWrapper() {
@@ -285,7 +287,7 @@ public class ExportControlled {
                 chain[i].checkValidity();
             }
 
-            if (this.validatorParams != null) {
+            /*if (this.validatorParams != null) {
 
                 X509CertSelector certSelect = new X509CertSelector();
                 certSelect.setSerialNumber(chain[0].getSerialNumber());
@@ -302,7 +304,7 @@ public class ExportControlled {
                 } catch (CertPathValidatorException e) {
                     throw new CertificateException(e);
                 }
-            }
+            }*/
 
             if (this.verifyServerCert) {
                 this.origTm.checkServerTrusted(chain, authType);
@@ -313,6 +315,8 @@ public class ExportControlled {
             this.origTm.checkClientTrusted(chain, authType);
         }
     };
+
+    }
 
     private static SSLSocketFactory getSSLSocketFactoryDefaultOrConfigured(MysqlIO mysqlIO) throws SQLException {
         String clientCertificateKeyStoreUrl = mysqlIO.connection.getClientCertificateKeyStoreUrl();
@@ -372,10 +376,29 @@ public class ExportControlled {
         }
 
         if (!StringUtils.isNullOrEmpty(clientCertificateKeyStoreUrl)) {
+            //if (true) {
+        if (!StringUtils.isNullOrEmpty(clientCertificateKeyStoreUrl)) {
             InputStream ksIS = null;
             try {
                 if (!StringUtils.isNullOrEmpty(clientCertificateKeyStoreType)) {
                     KeyStore clientKeyStore = KeyStore.getInstance(clientCertificateKeyStoreType);
+                    /*KeyStore clientKeyStore = KeyStore.getInstance(clientCertificateKeyStoreType);
+                    URL ksURL = new URL(clientCertificateKeyStoreUrl);
+                    char[] password = (clientCertificateKeyStorePassword == null) ? new char[0] : clientCertificateKeyStorePassword.toCharArray();
+                    ksIS = ksURL.openStream();
+                    clientKeyStore.load(ksIS, password);*/
+
+                    KeyStore clientKeyStore = KeyStore.getInstance("PKCS12", "GMJSSE");
+                    //String pfxfile = "D:\\workspace\\dble-ssh\\src\\main\\resources\\client-key\\sm2.action.both.pfx"; // 地址需要尝试下
+                    String pfxfile = "/Users/wd/Documents/Action/project/gmssl/gmssl-test/src/main/java/com/gmssl/ckeystore/sm2.action.both.pfx"; // 地址需要尝试下
+                    System.out.println("## 准备证书 pfx：" + pfxfile);
+                    char[] password = "12345678".toCharArray();
+                    clientKeyStore.load(new FileInputStream(pfxfile), password);
+                    kmf.init(clientKeyStore, password);
+                    kms = kmf.getKeyManagers();
+
+
+                    /*KeyStore clientKeyStore = KeyStore.getInstance("PKCS12", "GMJSSE");
                     URL ksURL = new URL(clientCertificateKeyStoreUrl);
                     char[] password = (clientCertificateKeyStorePassword == null) ? new char[0] : clientCertificateKeyStorePassword.toCharArray();
                     ksIS = ksURL.openStream();
@@ -420,10 +443,30 @@ public class ExportControlled {
             KeyStore trustKeyStore = null;
 
             if (!StringUtils.isNullOrEmpty(trustCertificateKeyStoreUrl) && !StringUtils.isNullOrEmpty(trustCertificateKeyStoreType)) {
+                //if (true) {
+                /*trustStoreIS = new URL(trustCertificateKeyStoreUrl).openStream();
+            if (!StringUtils.isNullOrEmpty(trustCertificateKeyStoreUrl) && !StringUtils.isNullOrEmpty(trustCertificateKeyStoreType)) {
                 trustStoreIS = new URL(trustCertificateKeyStoreUrl).openStream();
                 char[] trustStorePassword = (trustCertificateKeyStorePassword == null) ? new char[0] : trustCertificateKeyStorePassword.toCharArray();
 
                 trustKeyStore = KeyStore.getInstance(trustCertificateKeyStoreType);
+                trustKeyStore.load(trustStoreIS, trustStorePassword);*/
+
+                trustKeyStore = KeyStore.getInstance("PKCS12");
+                trustKeyStore.load(null);
+                //String ocaFile = "D:\\workspace\\dble-ssh\\src\\main\\resources\\client-key\\sm2.oca.pem";
+                String ocaFile = "/Users/wd/Documents/Action/project/gmssl/gmssl-test/src/main/java/com/gmssl/ckeystore/sm2.oca.pem";
+                System.out.println("## 准备证书 oca：" + ocaFile);
+                FileInputStream fin = new FileInputStream(ocaFile);
+                CertificateFactory cf = CertificateFactory.getInstance("X.509");
+                X509Certificate oca = (X509Certificate) cf.generateCertificate(fin);
+                trustKeyStore.setCertificateEntry("oca", oca);
+                //String rcaFile = "D:\\workspace\\dble-ssh\\src\\main\\resources\\client-key\\sm2.oca.pem";
+                String rcaFile = "/Users/wd/Documents/Action/project/gmssl/gmssl-test/src/main/java/com/gmssl/ckeystore/sm2.oca.pem";
+                System.out.println("## 准备证书 rca：" + rcaFile);
+                fin = new FileInputStream(rcaFile);
+                X509Certificate rca = (X509Certificate) cf.generateCertificate(fin);
+                trustKeyStore.setCertificateEntry("rca", rca);
                 trustKeyStore.load(trustStoreIS, trustStorePassword);
             }
 
