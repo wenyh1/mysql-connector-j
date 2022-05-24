@@ -616,6 +616,7 @@ Java 8 (for JDBC 4+ implementation) is also required. Set the full path to this 
     <target name="dist" description="Builds driver and binary .jar file, basically a distribution 'image' without docs." depends="init, compile">
         <delete file="${buildDir}/${fullProdName}.jar" />
         <delete file="${buildDir}/${fullProdName}-bin.jar" />
+        <delete file="${buildDir}/${fullProdName}-gmssl.jar" /> <!-- 包含gmssl_provider.jar包-->
 
         <mkdir dir="${buildDir}/META-INF" />
 
@@ -689,6 +690,15 @@ Java 8 (for JDBC 4+ implementation) is also required. Set the full path to this 
              excludes="testsuite/**,demo/**"
              index="true"
              manifest="${buildDir}/${fullProdName}/META-INF/MANIFEST.MF" />
+
+        <jar destfile="${buildDir}/${fullProdName}/${fullProdName}-gmssl.jar"
+             basedir="${compiler.output}"
+             includes="**/*.class,**/*.properties*,META-INF/**"
+             excludes="testsuite/**,demo/**"
+             index="true"
+             manifest="${buildDir}/${fullProdName}/META-INF/MANIFEST.MF">
+            <zipfileset excludes="META-INF/*.SF" src="${com.mysql.jdbc.extra.libs}/gmssl_provider.jar"/>
+        </jar>
     </target>
 
 
