@@ -31,13 +31,7 @@ import java.net.MalformedURLException;
 import java.net.Socket;
 import java.net.SocketException;
 import java.net.URL;
-import java.security.InvalidAlgorithmParameterException;
-import java.security.KeyFactory;
-import java.security.KeyManagementException;
-import java.security.KeyStore;
-import java.security.KeyStoreException;
-import java.security.NoSuchAlgorithmException;
-import java.security.UnrecoverableKeyException;
+import java.security.*;
 import java.security.cert.CertPath;
 import java.security.cert.CertPathValidator;
 import java.security.cert.CertPathValidatorException;
@@ -52,12 +46,7 @@ import java.security.cert.X509Certificate;
 import java.security.interfaces.RSAPublicKey;
 import java.security.spec.X509EncodedKeySpec;
 import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Properties;
-import java.util.Set;
+import java.util.*;
 
 import javax.crypto.Cipher;
 import javax.net.ssl.KeyManager;
@@ -79,7 +68,12 @@ public class ExportControlled {
     private static final String TLSv1 = "TLSv1";
     private static final String TLSv1_1 = "TLSv1.1";
     private static final String TLSv1_2 = "TLSv1.2";
-    private static final String[] TLS_PROTOCOLS = new String[] { TLSv1_2, TLSv1_1, TLSv1 };
+    private static final String[] TLS_PROTOCOLS = new String[]{TLSv1_2, TLSv1_1, TLSv1};
+
+    private static final String GMSSLv1_1 = "GMSSLv1.1";
+    private static final String[] GMSSL_PROTOCOLS = new String[]{GMSSLv1_1};
+    private static final String GMSSL_PRIVODE = "GMJSSE";
+    private static final String STORETYPE_GMSSL = "PKCS12";
 
     protected static boolean enabled() {
         // we may wish to un-static-ify this class this static method call may be removed entirely by the compiler
@@ -89,99 +83,117 @@ public class ExportControlled {
     /**
      * Converts the socket being used in the given MysqlIO to an SSLSocket by
      * performing the SSL/TLS handshake.
-     * 
-     * @param mysqlIO
-     *            the MysqlIO instance containing the socket to convert to an
-     *            SSLSocket.
-     * 
-     * @throws CommunicationsException
-     *             if the handshake fails, or if this distribution of
-     *             Connector/J doesn't contain the SSL crypto hooks needed to
-     *             perform the handshake.
+     *
+     * @param mysqlIO the MysqlIO instance containing the socket to convert to an
+     *                SSLSocket.
+     * @throws CommunicationsException if the handshake fails, or if this distribution of
+     *                                 Connector/J doesn't contain the SSL crypto hooks needed to
+     *                                 perform the handshake.
      */
     protected static void transformSocketToSSLSocket(MysqlIO mysqlIO) throws SQLException {
-        SocketFactory sslFact = new StandardSSLSocketFactory(getSSLSocketFactoryDefaultOrConfigured(mysqlIO), mysqlIO.socketFactory, mysqlIO.mysqlConnection);
+        SocketFactory sslFact = new StandardSSLSocketFactory(getSSLSocketFactory(mysqlIO), mysqlIO.socketFactory, mysqlIO.mysqlConnection);
 
         try {
             mysqlIO.mysqlConnection = sslFact.connect(mysqlIO.host, mysqlIO.port, null);
 
-            String[] tryProtocols = null;
+            if (mysqlIO.connection.getUseGMSSL()) {
+                ((SSLSocket) mysqlIO.mysqlConnection).setEnabledProtocols(GMSSL_PROTOCOLS);
 
-            // If enabledTLSProtocols configuration option is set then override the default TLS version restrictions. This allows enabling TLSv1.2 for
-            // self-compiled MySQL versions supporting it, as well as the ability for users to restrict TLS connections to approved protocols (e.g., prohibiting
-            // TLSv1) on the client side.
-            // Note that it is problematic to enable TLSv1.2 on the client side when the server is compiled with yaSSL. When client attempts to connect with
-            // TLSv1.2 yaSSL just closes the socket instead of re-attempting handshake with lower TLS version.
-            String enabledTLSProtocols = mysqlIO.connection.getEnabledTLSProtocols();
-            if (enabledTLSProtocols != null && enabledTLSProtocols.length() > 0) {
-                tryProtocols = enabledTLSProtocols.split("\\s*,\\s*");
-            } else if (mysqlIO.versionMeetsMinimum(5, 7, 28) || mysqlIO.versionMeetsMinimum(5, 6, 46) && !mysqlIO.versionMeetsMinimum(5, 7, 0)
-                    || mysqlIO.versionMeetsMinimum(5, 6, 0) && Util.isEnterpriseEdition(mysqlIO.getServerVersion())) {
-                // allow all known TLS versions for this subset of server versions by default
-                tryProtocols = TLS_PROTOCOLS;
-            } else {
-                // allow TLSv1 and TLSv1.1 for all server versions by default
-                tryProtocols = new String[] { TLSv1_1, TLSv1 };
-
-            }
-
-            List<String> configuredProtocols = new ArrayList<String>(Arrays.asList(tryProtocols));
-            List<String> jvmSupportedProtocols = Arrays.asList(((SSLSocket) mysqlIO.mysqlConnection).getSupportedProtocols());
-            List<String> allowedProtocols = new ArrayList<String>();
-            for (String protocol : TLS_PROTOCOLS) {
-                if (jvmSupportedProtocols.contains(protocol) && configuredProtocols.contains(protocol)) {
-                    allowedProtocols.add(protocol);
-                }
-            }
-            ((SSLSocket) mysqlIO.mysqlConnection).setEnabledProtocols(allowedProtocols.toArray(new String[0]));
-
-            // check allowed cipher suites
-            String enabledSSLCipherSuites = mysqlIO.connection.getEnabledSSLCipherSuites();
-            boolean overrideCiphers = enabledSSLCipherSuites != null && enabledSSLCipherSuites.length() > 0;
-
-            List<String> allowedCiphers = null;
-            if (overrideCiphers) {
-                // If "enabledSSLCipherSuites" is set we just check that JVM allows provided values,
-                // we don't disable DH algorithm, that allows c/J to deal with custom server builds with different security restrictions
-                allowedCiphers = new ArrayList<String>();
-                List<String> availableCiphers = Arrays.asList(((SSLSocket) mysqlIO.mysqlConnection).getEnabledCipherSuites());
-                for (String cipher : enabledSSLCipherSuites.split("\\s*,\\s*")) {
-                    if (availableCiphers.contains(cipher)) {
-                        allowedCiphers.add(cipher);
-                    }
-                }
-
-            } else {
-                // If we don't override ciphers, then we check for known restrictions
-                boolean disableDHAlgorithm = false;
-                if (mysqlIO.versionMeetsMinimum(5, 5, 45) && !mysqlIO.versionMeetsMinimum(5, 6, 0)
-                        || mysqlIO.versionMeetsMinimum(5, 6, 26) && !mysqlIO.versionMeetsMinimum(5, 7, 0) || mysqlIO.versionMeetsMinimum(5, 7, 6)) {
-                    // Workaround for JVM bug http://bugs.java.com/bugdatabase/view_bug.do?bug_id=6521495
-                    // Starting from 5.5.45, 5.6.26 and 5.7.6 server the key length used for creating Diffie-Hellman keys has been
-                    // increased from 512 to 2048 bits, while JVMs affected by this bug allow only range from 512 to 1024 (inclusive).
-                    // Bug is fixed in Java 8.
-                    if (Util.getJVMVersion() < 8) {
-                        disableDHAlgorithm = true;
-                    }
-                } else if (Util.getJVMVersion() >= 8) { // TODO check later for Java 9 behavior
-                    // Java 8 default java.security contains jdk.tls.disabledAlgorithms=DH keySize < 768
-                    // That causes handshake failures with older MySQL servers, eg 5.6.11. Thus we have to disable DH for them when running on Java 8+
-                    disableDHAlgorithm = true;
-                }
-
-                if (disableDHAlgorithm) {
+                Set<String> availableCiphers = new LinkedHashSet<String>(Arrays.asList(new String[]{"ECC_SM4_CBC_SM3", "ECDHE_SM4_CBC_SM3"}));
+                List<String> allowedCiphers = null;
+                String enabledSSLCipherSuites = mysqlIO.connection.getEnabledSSLCipherSuites();
+                if (enabledSSLCipherSuites != null && enabledSSLCipherSuites.length() > 0) {
                     allowedCiphers = new ArrayList<String>();
-                    for (String cipher : ((SSLSocket) mysqlIO.mysqlConnection).getEnabledCipherSuites()) {
-                        if (!(disableDHAlgorithm && (cipher.indexOf("_DHE_") > -1 || cipher.indexOf("_DH_") > -1))) {
+                    String[] arr = enabledSSLCipherSuites.split("\\s*,\\s*");
+                    for (String cipher : arr) {
+                        if (availableCiphers.contains(cipher))
+                            allowedCiphers.add(cipher);
+                    }
+                }
+
+                if (allowedCiphers != null) {
+                    ((SSLSocket) mysqlIO.mysqlConnection).setEnabledCipherSuites(allowedCiphers.toArray(new String[0]));
+                } else {
+                    ((SSLSocket) mysqlIO.mysqlConnection).setEnabledCipherSuites(availableCiphers.toArray(new String[0]));
+                }
+            } else {
+                String[] tryProtocols = null;
+
+                // If enabledTLSProtocols configuration option is set then override the default TLS version restrictions. This allows enabling TLSv1.2 for
+                // self-compiled MySQL versions supporting it, as well as the ability for users to restrict TLS connections to approved protocols (e.g., prohibiting
+                // TLSv1) on the client side.
+                // Note that it is problematic to enable TLSv1.2 on the client side when the server is compiled with yaSSL. When client attempts to connect with
+                // TLSv1.2 yaSSL just closes the socket instead of re-attempting handshake with lower TLS version.
+                String enabledTLSProtocols = mysqlIO.connection.getEnabledTLSProtocols();
+                if (enabledTLSProtocols != null && enabledTLSProtocols.length() > 0) {
+                    tryProtocols = enabledTLSProtocols.split("\\s*,\\s*");
+                } else if (mysqlIO.versionMeetsMinimum(5, 7, 28) || mysqlIO.versionMeetsMinimum(5, 6, 46) && !mysqlIO.versionMeetsMinimum(5, 7, 0)
+                        || mysqlIO.versionMeetsMinimum(5, 6, 0) && Util.isEnterpriseEdition(mysqlIO.getServerVersion())) {
+                    // allow all known TLS versions for this subset of server versions by default
+                    tryProtocols = TLS_PROTOCOLS;
+                } else {
+                    // allow TLSv1 and TLSv1.1 for all server versions by default
+                    tryProtocols = new String[]{TLSv1_1, TLSv1};
+                }
+
+                List<String> configuredProtocols = new ArrayList<String>(Arrays.asList(tryProtocols));
+                List<String> jvmSupportedProtocols = Arrays.asList(((SSLSocket) mysqlIO.mysqlConnection).getSupportedProtocols());
+                List<String> allowedProtocols = new ArrayList<String>();
+                for (String protocol : TLS_PROTOCOLS) {
+                    if (jvmSupportedProtocols.contains(protocol) && configuredProtocols.contains(protocol)) {
+                        allowedProtocols.add(protocol);
+                    }
+                }
+                ((SSLSocket) mysqlIO.mysqlConnection).setEnabledProtocols(allowedProtocols.toArray(new String[0]));
+
+                // check allowed cipher suites
+                String enabledSSLCipherSuites = mysqlIO.connection.getEnabledSSLCipherSuites();
+                boolean overrideCiphers = enabledSSLCipherSuites != null && enabledSSLCipherSuites.length() > 0;
+
+                List<String> allowedCiphers = null;
+                if (overrideCiphers) {
+                    // If "enabledSSLCipherSuites" is set we just check that JVM allows provided values,
+                    // we don't disable DH algorithm, that allows c/J to deal with custom server builds with different security restrictions
+                    allowedCiphers = new ArrayList<String>();
+                    List<String> availableCiphers = Arrays.asList(((SSLSocket) mysqlIO.mysqlConnection).getEnabledCipherSuites());
+                    for (String cipher : enabledSSLCipherSuites.split("\\s*,\\s*")) {
+                        if (availableCiphers.contains(cipher)) {
                             allowedCiphers.add(cipher);
                         }
                     }
-                }
-            }
 
-            // if some ciphers were filtered into allowedCiphers 
-            if (allowedCiphers != null) {
-                ((SSLSocket) mysqlIO.mysqlConnection).setEnabledCipherSuites(allowedCiphers.toArray(new String[0]));
+                } else {
+                    // If we don't override ciphers, then we check for known restrictions
+                    boolean disableDHAlgorithm = false;
+                    if (mysqlIO.versionMeetsMinimum(5, 5, 45) && !mysqlIO.versionMeetsMinimum(5, 6, 0)
+                            || mysqlIO.versionMeetsMinimum(5, 6, 26) && !mysqlIO.versionMeetsMinimum(5, 7, 0) || mysqlIO.versionMeetsMinimum(5, 7, 6)) {
+                        // Workaround for JVM bug http://bugs.java.com/bugdatabase/view_bug.do?bug_id=6521495
+                        // Starting from 5.5.45, 5.6.26 and 5.7.6 server the key length used for creating Diffie-Hellman keys has been
+                        // increased from 512 to 2048 bits, while JVMs affected by this bug allow only range from 512 to 1024 (inclusive).
+                        // Bug is fixed in Java 8.
+                        if (Util.getJVMVersion() < 8) {
+                            disableDHAlgorithm = true;
+                        }
+                    } else if (Util.getJVMVersion() >= 8) { // TODO check later for Java 9 behavior
+                        // Java 8 default java.security contains jdk.tls.disabledAlgorithms=DH keySize < 768
+                        // That causes handshake failures with older MySQL servers, eg 5.6.11. Thus we have to disable DH for them when running on Java 8+
+                        disableDHAlgorithm = true;
+                    }
+
+                    if (disableDHAlgorithm) {
+                        allowedCiphers = new ArrayList<String>();
+                        for (String cipher : ((SSLSocket) mysqlIO.mysqlConnection).getEnabledCipherSuites()) {
+                            if (!(disableDHAlgorithm && (cipher.indexOf("_DHE_") > -1 || cipher.indexOf("_DH_") > -1))) {
+                                allowedCiphers.add(cipher);
+                            }
+                        }
+                    }
+                }
+
+                // if some ciphers were filtered into allowedCiphers
+                if (allowedCiphers != null) {
+                    ((SSLSocket) mysqlIO.mysqlConnection).setEnabledCipherSuites(allowedCiphers.toArray(new String[0]));
+                }
             }
 
             ((SSLSocket) mysqlIO.mysqlConnection).startHandshake();
@@ -312,7 +324,208 @@ public class ExportControlled {
         public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException {
             this.origTm.checkClientTrusted(chain, authType);
         }
-    };
+    }
+
+    /**
+     * GMSSL
+     */
+    public static class X509TrustManagerWrapper2 implements X509TrustManager {
+        private X509TrustManager origTm = null;
+        private boolean verifyServerCert = false;
+
+        public X509TrustManagerWrapper2(X509TrustManager tm, boolean verifyServerCertificate) {
+            this.origTm = tm;
+            this.verifyServerCert = verifyServerCertificate;
+        }
+
+        public X509TrustManagerWrapper2() {
+        }
+
+        public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+            this.origTm.checkClientTrusted(chain, authType);
+        }
+
+        public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+            for (int i = 0; i < chain.length; i++) {
+                chain[i].checkValidity();
+            }
+            if (this.verifyServerCert) {
+                this.origTm.checkServerTrusted(chain, authType);
+            }
+        }
+
+        public X509Certificate[] getAcceptedIssuers() {
+            return this.origTm != null ? this.origTm.getAcceptedIssuers() : new X509Certificate[0];
+        }
+    }
+
+
+    private static SSLSocketFactory getSSLSocketFactory(MysqlIO mysqlIO) throws SQLException {
+        System.out.println("是否使用国密：" + mysqlIO.connection.getUseGMSSL());
+        if (mysqlIO.connection.getUseGMSSL()) {
+            return getGMSSLSocketFactory(mysqlIO);
+        } else {
+            return getSSLSocketFactoryDefaultOrConfigured(mysqlIO);
+        }
+    }
+
+    private static SSLSocketFactory getGMSSLSocketFactory(MysqlIO mysqlIO) throws SQLException {
+
+        String SunX509 = "SunX509";
+
+        String clientCertificateKeyStoreUrl = mysqlIO.connection.getClientCertificateKeyStoreUrl();
+        String clientCertificateKeyStorePassword = mysqlIO.connection.getClientCertificateKeyStorePassword();
+        String clientCertificateKeyStoreType = mysqlIO.connection.getClientCertificateKeyStoreType();
+        String trustRootCertificateKeyStoreUrl = mysqlIO.connection.getTrustRootCertificateKeyStoreUrl();
+        String trustMiddleCertificateKeyStoreUrl = mysqlIO.connection.getTrustMiddleCertificateKeyStoreUrl();
+        String trustCertificateKeyStoreType = mysqlIO.connection.getTrustCertificateKeyStoreType();
+
+        TrustManagerFactory tmf = null;
+        KeyManagerFactory kmf = null;
+
+        KeyManager[] kms = null;
+        List<TrustManager> tms = new ArrayList<TrustManager>();
+
+        if (StringUtils.isNullOrEmpty(clientCertificateKeyStoreType))
+            clientCertificateKeyStoreType = STORETYPE_GMSSL;
+
+        if (StringUtils.isNullOrEmpty(trustCertificateKeyStoreType))
+            trustCertificateKeyStoreType = STORETYPE_GMSSL;
+
+        try {
+            kmf = KeyManagerFactory.getInstance(SunX509);
+            tmf = TrustManagerFactory.getInstance(SunX509);
+        } catch (NoSuchAlgorithmException nsae) {
+            throw SQLError.createSQLException(
+                    "Default algorithm definitions for TrustManager and/or KeyManager are invalid.  Check java security properties file.",
+                    SQL_STATE_BAD_SSL_PARAMS, 0, false, mysqlIO.getExceptionInterceptor());
+        }
+
+        if (!StringUtils.isNullOrEmpty(clientCertificateKeyStoreUrl)) {
+            InputStream ksIS = null;
+            try {
+                KeyStore clientKeyStore = KeyStore.getInstance(clientCertificateKeyStoreType, GMSSL_PRIVODE);
+                URL ksURL = new URL(clientCertificateKeyStoreUrl);
+                char[] password = (clientCertificateKeyStorePassword == null) ? new char[0] : clientCertificateKeyStorePassword.toCharArray();
+                ksIS = ksURL.openStream();
+                clientKeyStore.load(ksIS, password);
+                kmf.init(clientKeyStore, password);
+
+                kms = kmf.getKeyManagers();
+            } catch (UnrecoverableKeyException uke) {
+                throw SQLError.createSQLException("Could not recover keys from client keystore.  Check password?", SQL_STATE_BAD_SSL_PARAMS, 0, false,
+                        mysqlIO.getExceptionInterceptor());
+            } catch (NoSuchAlgorithmException nsae) {
+                throw SQLError.createSQLException("Unsupported keystore algorithm [" + nsae.getMessage() + "]", SQL_STATE_BAD_SSL_PARAMS, 0, false,
+                        mysqlIO.getExceptionInterceptor());
+            } catch (KeyStoreException kse) {
+                throw SQLError.createSQLException("Could not create KeyStore instance [" + kse.getMessage() + "]", SQL_STATE_BAD_SSL_PARAMS, 0, false,
+                        mysqlIO.getExceptionInterceptor());
+            } catch (CertificateException nsae) {
+                throw SQLError.createSQLException("Could not load client" + clientCertificateKeyStoreType + " keystore from " + clientCertificateKeyStoreUrl,
+                        mysqlIO.getExceptionInterceptor());
+            } catch (MalformedURLException mue) {
+                throw SQLError.createSQLException(clientCertificateKeyStoreUrl + " does not appear to be a valid URL.", SQL_STATE_BAD_SSL_PARAMS, 0, false,
+                        mysqlIO.getExceptionInterceptor());
+            } catch (NoSuchProviderException nsae) {
+                throw SQLError.createSQLException("Unsupported keystore provider [" + nsae.getMessage() + "]", SQL_STATE_BAD_SSL_PARAMS, 0, false,
+                        mysqlIO.getExceptionInterceptor());
+            } catch (IOException ioe) {
+                SQLException sqlEx = SQLError.createSQLException("Cannot open " + clientCertificateKeyStoreUrl + " [" + ioe.getMessage() + "]",
+                        SQL_STATE_BAD_SSL_PARAMS, 0, false, mysqlIO.getExceptionInterceptor());
+                sqlEx.initCause(ioe);
+                throw sqlEx;
+            } finally {
+                if (ksIS != null) {
+                    try {
+                        ksIS.close();
+                    } catch (IOException e) {
+                        // ignore
+                    }
+                }
+            }
+
+
+        }
+
+        InputStream rtrustStoreIS = null;
+        InputStream otrustStoreIS = null;
+
+        try {
+            KeyStore trustKeyStore = null;
+            if (!StringUtils.isNullOrEmpty(trustRootCertificateKeyStoreUrl) &&
+                    !StringUtils.isNullOrEmpty(trustMiddleCertificateKeyStoreUrl)) {
+
+                trustKeyStore = KeyStore.getInstance(trustCertificateKeyStoreType);
+                trustKeyStore.load(null);
+
+                rtrustStoreIS = new URL(trustRootCertificateKeyStoreUrl).openStream();
+                otrustStoreIS = new URL(trustMiddleCertificateKeyStoreUrl).openStream();
+
+                CertificateFactory cf = CertificateFactory.getInstance("X.509");
+                X509Certificate rca = (X509Certificate) cf.generateCertificate(rtrustStoreIS);
+                trustKeyStore.setCertificateEntry("rca", rca);
+                X509Certificate oca = (X509Certificate) cf.generateCertificate(otrustStoreIS);
+                trustKeyStore.setCertificateEntry("oca", oca);
+            }
+            tmf.init(trustKeyStore);
+
+            TrustManager[] origTms = tmf.getTrustManagers();
+            final boolean verifyServerCert = mysqlIO.connection.getVerifyServerCertificate();
+            for (TrustManager tm : origTms) {
+                tms.add(tm instanceof X509TrustManager ? new X509TrustManagerWrapper2((X509TrustManager) tm, verifyServerCert) : tm);
+            }
+        } catch (MalformedURLException e) {
+            throw SQLError.createSQLException("[" + trustRootCertificateKeyStoreUrl + ", " + trustMiddleCertificateKeyStoreUrl + "] does not appear to be a valid URL.", SQL_STATE_BAD_SSL_PARAMS, 0, false,
+                    mysqlIO.getExceptionInterceptor());
+        } catch (KeyStoreException e) {
+            throw SQLError.createSQLException("Could not create KeyStore instance [" + e.getMessage() + "]", SQL_STATE_BAD_SSL_PARAMS, 0, false,
+                    mysqlIO.getExceptionInterceptor());
+        } catch (NoSuchAlgorithmException e) {
+            throw SQLError.createSQLException("Unsupported keystore algorithm [" + e.getMessage() + "]", SQL_STATE_BAD_SSL_PARAMS, 0, false,
+                    mysqlIO.getExceptionInterceptor());
+        } catch (CertificateException e) {
+            throw SQLError.createSQLException("Could not load trust " + trustCertificateKeyStoreType + " keystore from [" + trustRootCertificateKeyStoreUrl + ", " + trustMiddleCertificateKeyStoreUrl + "]",
+                    SQL_STATE_BAD_SSL_PARAMS, 0, false, mysqlIO.getExceptionInterceptor());
+        } catch (IOException e) {
+            SQLException sqlEx = SQLError.createSQLException("Cannot open " + trustCertificateKeyStoreType + " [" + e.getMessage() + "]",
+                    SQL_STATE_BAD_SSL_PARAMS, 0, false, mysqlIO.getExceptionInterceptor());
+            sqlEx.initCause(e);
+            throw sqlEx;
+        } finally {
+            if (rtrustStoreIS != null) {
+                try {
+                    rtrustStoreIS.close();
+                } catch (IOException e) {
+                    // ignore
+                }
+            }
+            if (otrustStoreIS != null) {
+                try {
+                    otrustStoreIS.close();
+                } catch (IOException e) {
+                    // ignore
+                }
+            }
+        }
+
+        if (tms.size() == 0) {
+            tms.add(new X509TrustManagerWrapper2());
+        }
+        try {
+            SSLContext sslContext = SSLContext.getInstance(GMSSLv1_1, GMSSL_PRIVODE);
+            sslContext.init(kms, tms.toArray(new TrustManager[tms.size()]), null);
+            return sslContext.getSocketFactory();
+        } catch (NoSuchAlgorithmException nsae) {
+            throw SQLError.createSQLException("GMSSLv1.1 is not a valid SSL protocol.", SQL_STATE_BAD_SSL_PARAMS, 0, false, mysqlIO.getExceptionInterceptor());
+        } catch (KeyManagementException kme) {
+            throw SQLError.createSQLException("KeyManagementException: " + kme.getMessage(), SQL_STATE_BAD_SSL_PARAMS, 0, false,
+                    mysqlIO.getExceptionInterceptor());
+        } catch (NoSuchProviderException nsae) {
+            throw SQLError.createSQLException("Unsupported keystore provider [" + nsae.getMessage() + "]", SQL_STATE_BAD_SSL_PARAMS, 0, false,
+                    mysqlIO.getExceptionInterceptor());
+        }
+    }
 
     private static SSLSocketFactory getSSLSocketFactoryDefaultOrConfigured(MysqlIO mysqlIO) throws SQLException {
         String clientCertificateKeyStoreUrl = mysqlIO.connection.getClientCertificateKeyStoreUrl();
@@ -337,6 +550,10 @@ public class ExportControlled {
                     clientCertificateKeyStoreUrl = "file:" + clientCertificateKeyStoreUrl;
                 }
             }
+        } else {
+            if (StringUtils.isNullOrEmpty(clientCertificateKeyStoreType)) {
+                clientCertificateKeyStoreType = "JKS";
+            }
         }
 
         if (StringUtils.isNullOrEmpty(trustCertificateKeyStoreUrl)) {
@@ -353,6 +570,10 @@ public class ExportControlled {
                 } catch (MalformedURLException e) {
                     trustCertificateKeyStoreUrl = "file:" + trustCertificateKeyStoreUrl;
                 }
+            }
+        } else {
+            if (StringUtils.isNullOrEmpty(trustCertificateKeyStoreType)) {
+                trustCertificateKeyStoreType = "JKS";
             }
         }
 
@@ -427,7 +648,7 @@ public class ExportControlled {
                 trustKeyStore.load(trustStoreIS, trustStorePassword);
             }
 
-            tmf.init(trustKeyStore); // (trustKeyStore == null) initializes the TrustManagerFactory with the default truststore. 
+            tmf.init(trustKeyStore); // (trustKeyStore == null) initializes the TrustManagerFactory with the default truststore.
 
             // building the customized list of TrustManagers from original one if it's available
             TrustManager[] origTms = tmf.getTrustManagers();
@@ -448,7 +669,7 @@ public class ExportControlled {
             throw SQLError.createSQLException("Unsupported keystore algorithm [" + e.getMessage() + "]", SQL_STATE_BAD_SSL_PARAMS, 0, false,
                     mysqlIO.getExceptionInterceptor());
         } catch (CertificateException e) {
-            throw SQLError.createSQLException("Could not load trust" + trustCertificateKeyStoreType + " keystore from " + trustCertificateKeyStoreUrl,
+            throw SQLError.createSQLException("Could not load trust " + trustCertificateKeyStoreType + " keystore from " + trustCertificateKeyStoreUrl,
                     SQL_STATE_BAD_SSL_PARAMS, 0, false, mysqlIO.getExceptionInterceptor());
         } catch (IOException e) {
             SQLException sqlEx = SQLError.createSQLException("Cannot open " + trustCertificateKeyStoreType + " [" + e.getMessage() + "]",
@@ -465,7 +686,7 @@ public class ExportControlled {
             }
         }
 
-        // if original TrustManagers are not available then putting one X509TrustManagerWrapper which take care only about expiration check 
+        // if original TrustManagers are not available then putting one X509TrustManagerWrapper which take care only about expiration check
         if (tms.size() == 0) {
             tms.add(new X509TrustManagerWrapper());
         }
@@ -508,7 +729,8 @@ public class ExportControlled {
         }
     }
 
-    public static byte[] encryptWithRSAPublicKey(byte[] source, RSAPublicKey key, String transformation, ExceptionInterceptor interceptor) throws SQLException {
+    public static byte[] encryptWithRSAPublicKey(byte[] source, RSAPublicKey key, String
+            transformation, ExceptionInterceptor interceptor) throws SQLException {
         try {
             Cipher cipher = Cipher.getInstance(transformation);
             cipher.init(Cipher.ENCRYPT_MODE, key);

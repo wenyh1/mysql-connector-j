@@ -2901,4 +2901,28 @@ public class ConnectionWrapper extends WrapperBase implements Connection {
     public boolean isUseSSLExplicit() {
         return this.mc.isUseSSLExplicit();
     }
+
+    public boolean getUseGMSSL() {
+        return this.mc.getUseGMSSL();
+    }
+
+    public void setUseGMSSL(boolean useGMSSL) {
+        this.mc.setUseGMSSL(useGMSSL);
+    }
+
+    public String getTrustRootCertificateKeyStoreUrl() {
+        return mc.getTrustRootCertificateKeyStoreUrl();
+    }
+
+    public void setTrustRootCertificateKeyStoreUrl(String trustRootCertificateKeyStoreUrl) {
+        this.mc.setTrustRootCertificateKeyStoreUrl(trustRootCertificateKeyStoreUrl);
+    }
+
+    public String getTrustMiddleCertificateKeyStoreUrl() {
+        return mc.getTrustMiddleCertificateKeyStoreUrl();
+    }
+
+    public void setTrustMiddleCertificateKeyStoreUrl(String trustMiddleCertificateKeyStoreUrl) {
+        this.mc.setTrustMiddleCertificateKeyStoreUrl(trustMiddleCertificateKeyStoreUrl);
+    }
 }

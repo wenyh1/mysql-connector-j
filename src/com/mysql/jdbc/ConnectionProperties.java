@@ -1433,4 +1433,17 @@ public interface ConnectionProperties {
     public boolean getEnableEscapeProcessing();
 
     public void setEnableEscapeProcessing(boolean flag);
+
+    public boolean getUseGMSSL();
+
+    public void setUseGMSSL(boolean useGMSSL);
+
+    public String getTrustRootCertificateKeyStoreUrl();
+
+    public void setTrustRootCertificateKeyStoreUrl(String trustRootCertificateKeyStoreUrl);
+
+    public String getTrustMiddleCertificateKeyStoreUrl();
+
+    public void setTrustMiddleCertificateKeyStoreUrl(String trustMiddleCertificateKeyStoreUrl);
+
 }
