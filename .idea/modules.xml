@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/ConnectorJ 80.iml" filepath="$PROJECT_DIR$/ConnectorJ 80.iml" />
+      <module fileurl="file://$PROJECT_DIR$/ConnectorJ-GMSSL.iml" filepath="$PROJECT_DIR$/ConnectorJ-GMSSL.iml" />
     </modules>
   </component>
 </project>

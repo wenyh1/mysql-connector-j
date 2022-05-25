@@ -48,7 +48,6 @@ public class Driver extends NonRegisteringDriver implements java.sql.Driver {
     // Register ourselves with the DriverManager
     //
     static {
-        System.out.println("### Support GMSSL");
         try {
             java.sql.DriverManager.registerDriver(new Driver());
         } catch (SQLException E) {
