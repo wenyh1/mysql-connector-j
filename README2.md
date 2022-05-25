@@ -1,7 +1,12 @@
 ## MYSQL 支持GMSSL
 
-### 包地址：
+### 打包方式
+见 [README3.md](README3.md)
+
+### 取包地址：
 在本仓库的GMsslRelease目录下
+- mysql-connector-java-5.1.49-SNAPSHOT.jar  不包含gmssl_privoder.jar（使用时需要在自己的项目中导入gmssl_privoder.jar）
+- mysql-connector-java-5.1.49-SNAPSHOT-gmssl.jar  包含gmssl_privoder.jar
 
 ### 配置如下
 ```
