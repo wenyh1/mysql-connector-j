@@ -1,6 +1,9 @@
 ## MYSQL 支持GMSSL
 
-###配置如下
+### 包地址：
+在本仓库的GMsslRelease目录下
+
+### 配置如下
 ```
 final String DB_URL = "jdbc:mysql://localhost:8066/testdb?" +
                 // "requireSSL=true" +
@@ -16,7 +19,7 @@ final String DB_URL = "jdbc:mysql://localhost:8066/testdb?" +
                 "&clientCertificateKeyStorePassword=12345678" +
                 "&clientCertificateKeyStoreType=PKCS12";
 ```
-###参数说明：
+### 参数说明：
 - useSSL：是否开启表示开启ssl，默认为false；
 - useGMSSL：是否使用国密ssl；使用出现问题，默认为false；
 - verifyServerCertificate：jdbc是否验证服务端的身份，默认为false；
