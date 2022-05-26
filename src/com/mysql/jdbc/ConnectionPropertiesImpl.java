@@ -1276,13 +1276,13 @@ public class ConnectionPropertiesImpl implements Serializable, ConnectionPropert
     private StringConnectionProperty trustCertificateKeyStoreUrl = new StringConnectionProperty("trustCertificateKeyStoreUrl", null,
             Messages.getString("ConnectionProperties.trustCertificateKeyStoreUrl"), "5.1.0", SECURITY_CATEGORY, 8);
 
-    private StringConnectionProperty clientCertificateKeyStoreType = new StringConnectionProperty("clientCertificateKeyStoreType", "JKS",
+    private StringConnectionProperty clientCertificateKeyStoreType = new StringConnectionProperty("clientCertificateKeyStoreType", null,
             Messages.getString("ConnectionProperties.clientCertificateKeyStoreType"), "5.1.0", SECURITY_CATEGORY, 6);
 
     private StringConnectionProperty clientCertificateKeyStorePassword = new StringConnectionProperty("clientCertificateKeyStorePassword", null,
             Messages.getString("ConnectionProperties.clientCertificateKeyStorePassword"), "5.1.0", SECURITY_CATEGORY, 7);
 
-    private StringConnectionProperty trustCertificateKeyStoreType = new StringConnectionProperty("trustCertificateKeyStoreType", "JKS",
+    private StringConnectionProperty trustCertificateKeyStoreType = new StringConnectionProperty("trustCertificateKeyStoreType", null,
             Messages.getString("ConnectionProperties.trustCertificateKeyStoreType"), "5.1.0", SECURITY_CATEGORY, 9);
 
     private StringConnectionProperty trustCertificateKeyStorePassword = new StringConnectionProperty("trustCertificateKeyStorePassword", null,
@@ -1339,6 +1339,15 @@ public class ConnectionPropertiesImpl implements Serializable, ConnectionPropert
 
     private BooleanConnectionProperty enableEscapeProcessing = new BooleanConnectionProperty("enableEscapeProcessing", true,
             Messages.getString("ConnectionProperties.enableEscapeProcessing"), "5.1.37", PERFORMANCE_CATEGORY, Integer.MIN_VALUE);
+
+    private BooleanConnectionProperty useGMSSL = new BooleanConnectionProperty("useGMSSL", false, Messages.getString("ConnectionProperties.useGMSSL"), "3.0.2",
+            SECURITY_CATEGORY, 2);
+
+    private StringConnectionProperty trustRootCertificateKeyStoreUrl = new StringConnectionProperty("trustRootCertificateKeyStoreUrl", null,
+            Messages.getString("ConnectionProperties.trustRootCertificateKeyStoreUrl"), "5.1.0", SECURITY_CATEGORY, 8);
+
+    private StringConnectionProperty trustMiddleCertificateKeyStoreUrl = new StringConnectionProperty("trustMiddleCertificateKeyStoreUrl", null,
+            Messages.getString("ConnectionProperties.trustMiddleCertificateKeyStoreUrl"), "5.1.0", SECURITY_CATEGORY, 8);
 
     protected DriverPropertyInfo[] exposeAsDriverPropertyInfoInternal(Properties info, int slotsToReserve) throws SQLException {
         initializeProperties(info);
@@ -4991,5 +5000,29 @@ public class ConnectionPropertiesImpl implements Serializable, ConnectionPropert
 
     public void setEnableEscapeProcessing(boolean flag) {
         this.enableEscapeProcessing.setValue(flag);
+    }
+
+    public boolean getUseGMSSL() {
+        return this.useGMSSL.getValueAsBoolean();
+    }
+
+    public void setUseGMSSL(boolean useGMSSL) {
+        this.useGMSSL.setValue(useGMSSL);
+    }
+
+    public String getTrustRootCertificateKeyStoreUrl() {
+        return trustRootCertificateKeyStoreUrl.getValueAsString();
+    }
+
+    public void setTrustRootCertificateKeyStoreUrl(String trustRootCertificateKeyStoreUrl) {
+        this.trustRootCertificateKeyStoreUrl.setValue(trustRootCertificateKeyStoreUrl);
+    }
+
+    public String getTrustMiddleCertificateKeyStoreUrl() {
+        return trustMiddleCertificateKeyStoreUrl.getValueAsString();
+    }
+
+    public void setTrustMiddleCertificateKeyStoreUrl(String trustMiddleCertificateKeyStoreUrl) {
+        this.trustMiddleCertificateKeyStoreUrl.setValue(trustMiddleCertificateKeyStoreUrl);
     }
 }

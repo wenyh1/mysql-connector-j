@@ -2506,4 +2506,28 @@ public class MultiHostMySQLConnection implements MySQLConnection {
     public String getQueryTimingUnits() {
         return getActiveMySQLConnection().getQueryTimingUnits();
     }
+
+    public boolean getUseGMSSL() {
+        return getActiveMySQLConnection().getUseGMSSL();
+    }
+
+    public void setUseGMSSL(boolean useGMSSL) {
+        getActiveMySQLConnection().setUseGMSSL(useGMSSL);
+    }
+
+    public String getTrustRootCertificateKeyStoreUrl() {
+        return getActiveMySQLConnection().getTrustRootCertificateKeyStoreUrl();
+    }
+
+    public void setTrustRootCertificateKeyStoreUrl(String trustRootCertificateKeyStoreUrl) {
+        getActiveMySQLConnection().setTrustRootCertificateKeyStoreUrl(trustRootCertificateKeyStoreUrl);
+    }
+
+    public String getTrustMiddleCertificateKeyStoreUrl() {
+        return getActiveMySQLConnection().getTrustMiddleCertificateKeyStoreUrl();
+    }
+
+    public void setTrustMiddleCertificateKeyStoreUrl(String trustMiddleCertificateKeyStoreUrl) {
+        getActiveMySQLConnection().setTrustMiddleCertificateKeyStoreUrl(trustMiddleCertificateKeyStoreUrl);
+    }
 }
